@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Support\Facades\Input;
-use Illuminate\Support\Facades\Storage;
+// use Illuminate\Support\Facades\Storage;
+// use Illuminate\Support\Facades\DB;
 use App\User;
+use App\Matches;
 
 class MatchController extends Controller {
 
@@ -13,6 +15,13 @@ class MatchController extends Controller {
         0, 0, 0,
         0, 0, 0
     ];
+
+    static private $matches;
+
+    public function __construct()
+    {
+        self::$matches= new Matches();
+    }
 
     public function index() {
         return view('index');
@@ -27,14 +36,12 @@ class MatchController extends Controller {
      */
     public function matches()
     {
-        if (Storage::disk('local')->exists('matches.dat')) {
-          $matches= Storage::disk('local')->get('matches.dat');
-          $matches= collect(json_decode($matches));
-        } else {
-          $matches= null;
-        }
-
+        // database
+        // $matches= DB::table('matches')->select('id', 'name', 'next', 'winner', 'board')->get();
+        $matches= self::$matches->getAllMatches();
         return response()->json($matches);
+
+        // faker
         // return response()->json($this->fakeMatches());
     }
 
@@ -48,15 +55,19 @@ class MatchController extends Controller {
      */
     public function match($id) 
     {
-        /**/ 
-        $matches= Storage::disk('local')->get('matches.dat');
-        $matches= collect(json_decode($matches));
-
-        $match= $matches->where('id', $id);
-        $match= $match->pop();
-
-        return response()->json($match);
+        // database
         /*
+        $match= DB::table('matches')->select('id', 'name', 'next', 'winner', 'board')
+            ->where('id', $id)
+            ->get();
+        $match= $match->pop();
+        $match->board= json_decode($match->board);
+        */
+        $match= self::$matches->getMatch($id);
+        // dump($match);
+        return response()->json($match);
+        
+        /* // faker
         return response()->json([
             'id' => $id,
             'name' => 'Match'.$id,
@@ -72,6 +83,18 @@ class MatchController extends Controller {
     }
 
     /**
+     * reset a match - for test case
+     *
+     * @param int $id
+     * @return void
+     */
+    public function reset($id)
+    {
+        self::$matches->reset($id);
+        return $this->match($id);
+    }
+
+    /**
      * Makes a move in a match
      *
      * TODO it's mocked, make this work :)
@@ -79,31 +102,38 @@ class MatchController extends Controller {
      * @param $id
      * @return \Illuminate\Http\JsonResponse
      */
-    public function move($id) {
-        $matches= Storage::disk('local')->get('matches.dat');
-        $matches= collect(json_decode($matches));
-
-        $match= $matches->where('id', $id);
+    public function move($id) 
+    {
+        //database
+        /*
+        $match= DB::table('matches')->select('id', 'name', 'next', 'winner', 'board')
+            ->where('id', $id)
+            ->get();
         $match= $match->pop();
-
+        $match->board= json_decode($match->board);
+        
         $position = Input::get('position');
-        $match->board[$position]= $match->next;
-        
-        $match->winner= $this->testWinner($match->board);
-        $match->next= ($match->winner == 0)? (($match->next == 1)? 2: 1): 0;
+        // to avoid over take position
+        if ($match->board[$position] == 0) {
+            $match->board[$position]= $match->next;
 
-        $this->delete($id);
-        
-        $matches= Storage::disk('local')->get('matches.dat');
-        $matches= collect(json_decode($matches));
+            $match->winner= $this->testWinner($match->board);
+            $match->next= ($match->winner == 0)? (($match->next == 1)? 2: 1): 0;
 
-        $matches->push($match);
-
-        Storage::disk('local')->put('matches.dat', $matches->toJson());
+            DB::table('matches')->where('id', $id)
+                ->update([
+                    'next'=> $match->next,
+                    'winner'=> $match->winner,
+                    'board'=> json_encode($match->board),
+                ]);
+        }
+        */
+        $position = Input::get('position');
+        $match= self::$matches->matchMove($id, $position);
 
         return response()->json($match);
-
-        /*
+        
+        /* // faker
         $board = [
             1, 0, 2,
             0, 1, 2,
@@ -133,7 +163,7 @@ class MatchController extends Controller {
             0 1 2
             3 4 5
             6 7 8
-        */
+        ************
         if ($board[0] == $board[1] and $board[0] == $board[2]) return $board[0]; // row 1
         if ($board[3] == $board[4] and $board[3] == $board[5]) return $board[3]; // row 2
         if ($board[6] == $board[7] and $board[6] == $board[8]) return $board[6]; // row 3
@@ -143,31 +173,8 @@ class MatchController extends Controller {
         if ($board[0] == $board[4] and $board[0] == $board[8]) return $board[0]; // left to right
         if ($board[2] == $board[4] and $board[2] == $board[6]) return $board[2]; // right to left
         if (!in_array(0, $board)) return 3;
+        */
         return 0;
-    }
-
-    public function reset($id)
-    {
-        $matches= Storage::disk('local')->get('matches.dat');
-        $matches= collect(json_decode($matches));
-
-        $match= $matches->where('id', $id);
-        $match= $match->pop();
-
-        $match->board= self::$blankBoard;
-        $match->winner= 0;
-        $match->next= 1;
-
-        $this->delete($id);
-        
-        $matches= Storage::disk('local')->get('matches.dat');
-        $matches= collect(json_decode($matches));
-
-        $matches->push($match);
-
-        Storage::disk('local')->put('matches.dat', $matches->toJson());
-
-        return response()->json($match);
     }
 
     /**
@@ -179,34 +186,23 @@ class MatchController extends Controller {
      */
     public function create()
     {
-      if (Storage::disk('local')->exists('matches.dat')) {
-        $matches= Storage::disk('local')->get('matches.dat');
-        $matches= collect(json_decode($matches));
-      } else {
-        Storage::disk('local')->put('matches.dat', '');
-        $matches= collect([]);
-      }
+        // database
+        /*
+        $id= DB::table('matches')->insertGetId([
+            'name'=>'temp',
+            'next'=> 1,
+            'winner'=> 0,
+            'board'=> json_encode(self::$blankBoard),
+        ]);
 
-      if (Storage::disk('local')->exists('matchId.dat')) {
-          $matchId= Storage::disk('local')->get('matchId.dat');
-          $matchId= (int)$matchId + 1;
-      } else {
-          $matchId= 1;
-      }
-      Storage::disk('local')->put('matchId.dat', $matchId);
+        DB::table('matches')->where('id', $id)->update(['name'=>"Match:[{$id}]"]);
+        */
+        self::$matches->createMatch();
 
-      $matches->push([
-          'id' => $matchId,
-          'name' => "Match:[{$matchId}]",
-          'next' => 1,
-          'winner' => 0,
-          'board' => self::$blankBoard,
-      ]);
+        return $this->matches();
 
-      Storage::disk('local')->put('matches.dat', $matches->toJson());
-
-      return response()->json($matches->all());
-      // return response()->json($this->fakeMatches());
+        // faker
+        // return response()->json($this->fakeMatches());
     }
 
     /**
@@ -217,23 +213,15 @@ class MatchController extends Controller {
      * @param $id
      * @return \Illuminate\Http\JsonResponse
      */
-    public function delete($id) {
-        if (Storage::disk('local')->exists('matches.dat')) {
-            $matches= Storage::disk('local')->get('matches.dat');
-            $matches= collect(json_decode($matches));
-        } else {
-            return response()->json();
-        }
-        
-        $matches= $matches->filter(function($match) use($id){
-            return $match->id != $id;
-        })->values();
+    public function delete($id) 
+    {
+        // database
+        // DB::table('matches')->where('id', $id)->delete();
+        self::$matches->deleteMatch($id);
 
-        Storage::disk('local')->put('matches.dat', $matches->toJson());
+        return $this->matches();
 
-        return response()->json($matches->all());
-    
-        /*
+        /* // faker
         return response()->json($this->fakeMatches()->filter(function($match) use($id){
             return $match['id'] != $id;
         })->values());

@@ -48311,14 +48311,21 @@ var RELOAD_TIME = 3000;
             return value === 1 ? 'X' : value === 2 ? 'O' : value === 0 ? '' : 'DRAW';
         },
         move: function move(position) {
+            if (this.match.winner != 0) {
+                alert('Sorry, this match is over.');
+            }
             if (this.match.next !== this.currentPlayer) {
                 alert('Not your turn!');
                 return;
             }
-            this.$emit('move', {
-                position: position,
-                id: this.match.id
-            });
+            if (this.match.board[position] == '') {
+                this.$emit('move', {
+                    position: position,
+                    id: this.match.id
+                });
+            } else {
+                alert('Please, choose a empty field!');
+            }
         },
         load: function load() {
             if (!this.loading) {
